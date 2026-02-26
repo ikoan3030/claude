@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>送迎シフト管理システム</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { font-size: 0.9rem; background: #f4f6f9; }
+
+    /* ---- Schedule Table ---- */
+    .schedule-table { border-collapse: separate; border-spacing: 0; font-size: 0.82rem; }
+    .schedule-table th {
+      background: #2c3e50; color: #fff; text-align: center;
+      padding: 8px 10px; white-space: nowrap;
+    }
+    .schedule-table th.col-sat { background: #1a5276; }
+    .schedule-table th.col-sun { background: #922b21; }
+    .schedule-table td { padding: 3px; vertical-align: middle; }
+    .schedule-table td.row-label {
+      background: #f8f9fa; white-space: nowrap;
+      padding: 4px 10px; font-weight: 600; font-size: 0.8rem;
+      border-right: 3px solid #dee2e6;
+    }
+    .schedule-table td.ts-label {
+      background: #f8f9fa; color: #888; font-size: 0.75rem;
+      padding: 4px 8px; white-space: nowrap;
+      border-right: 1px solid #dee2e6;
+    }
+    .schedule-table tr.separator td { height: 5px; padding: 0; background: #e9ecef; border: none; }
+
+    /* ---- Assignment Cell ---- */
+    .cell-btn {
+      width: 100%; min-height: 42px;
+      border: 1px dashed #ced4da; background: #fff;
+      border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      padding: 4px 6px; transition: all 0.15s;
+      font-size: 0.82rem; line-height: 1.2; text-align: center;
+    }
+    .cell-btn:hover { background: #e9ecef; border-color: #6c757d; }
+    .cell-btn.assigned { border-style: solid; border-color: #adb5bd; }
+    .cell-btn.warn-unavail { border-color: #dc3545; background: #fff5f5; }
+    .cell-btn.warn-ineligible { border-color: #ffc107; background: #fffbe6; }
+    .cell-btn.empty { color: #adb5bd; }
+    .cell-bg-sat { background: #eaf3fb !important; }
+
+    /* ---- Route Color Dot ---- */
+    .route-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+    /* ---- Capacity Bar ---- */
+    .cap-bar { height: 5px; background: #dee2e6; border-radius: 3px; margin-top: 3px; }
+    .cap-fill { height: 100%; border-radius: 3px; background: #0d6efd; transition: width 0.3s; }
+
+    /* ---- Print ---- */
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; }
+      .schedule-table th { background: #2c3e50 !important; -webkit-print-color-adjust: exact; }
+      .schedule-table td.row-label { background: #f8f9fa !important; -webkit-print-color-adjust: exact; }
+    }
+    .print-only { display: none; }
+    @media print { .print-only { display: block; } }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark py-2 no-print" style="background:#2c3e50">
+  <div class="container-fluid">
+    <span class="navbar-brand fw-bold fs-6">
+      <i class="bi bi-bus-front-fill me-2"></i>送迎シフト管理システム
+    </span>
+    <span class="text-white-50 small d-none d-md-block">データはこのブラウザに自動保存されます</span>
+  </div>
+</nav>
+
+<!-- Print Header -->
+<div class="print-only p-3">
+  <h5>送迎シフト表</h5>
+  <div id="print-week-label" class="text-muted small"></div>
+</div>
+
+<div class="container-fluid py-3">
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3 no-print" id="mainTabs">
+    <li class="nav-item">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-schedule">
+        <i class="bi bi-calendar-week me-1"></i>週間シフト
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-staff">
+        <i class="bi bi-people me-1"></i>職員管理
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-routes">
+        <i class="bi bi-map me-1"></i>ルート管理
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- ==================== Tab: Schedule ==================== -->
+    <div class="tab-pane fade show active" id="tab-schedule">
+
+      <!-- Toolbar -->
+      <div class="d-flex align-items-center gap-2 flex-wrap mb-3 no-print">
+        <div class="d-flex align-items-center gap-1">
+          <button class="btn btn-outline-secondary btn-sm" onclick="ScheduleUI.prevWeek()">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <span class="fw-bold px-2" id="week-label" style="min-width:210px;text-align:center"></span>
+          <button class="btn btn-outline-secondary btn-sm" onclick="ScheduleUI.nextWeek()">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+          <button class="btn btn-outline-secondary btn-sm ms-1" onclick="ScheduleUI.goToThisWeek()">今週</button>
+        </div>
+        <div class="d-flex gap-2 ms-1">
+          <button class="btn btn-primary btn-sm" onclick="ScheduleUI.autoGenerate()">
+            <i class="bi bi-magic me-1"></i>自動生成
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="ScheduleUI.openUnavailModal()">
+            <i class="bi bi-person-x me-1"></i>休み設定
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i>印刷
+          </button>
+        </div>
+      </div>
+
+      <!-- Alert -->
+      <div id="schedule-alert"></div>
+
+      <!-- Table -->
+      <div class="table-responsive">
+        <table class="table table-bordered schedule-table w-auto" id="schedule-table">
+          <thead id="schedule-thead"></thead>
+          <tbody id="schedule-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Summary -->
+      <div class="mt-4 no-print">
+        <h6 class="text-muted fw-semibold">今週の割り当て状況</h6>
+        <div id="assignment-summary" class="row g-2"></div>
+      </div>
+    </div>
+
+    <!-- ==================== Tab: Staff ==================== -->
+    <div class="tab-pane fade" id="tab-staff">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">職員一覧</h5>
+        <button class="btn btn-primary btn-sm" onclick="StaffUI.openAddModal()">
+          <i class="bi bi-plus-lg me-1"></i>職員を追加
+        </button>
+      </div>
+      <div id="staff-alert"></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>名前</th>
+              <th>担当可能なルート</th>
+              <th class="text-center" style="width:100px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="staff-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ==================== Tab: Routes ==================== -->
+    <div class="tab-pane fade" id="tab-routes">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">ルート一覧</h5>
+        <button class="btn btn-primary btn-sm" onclick="RouteUI.openAddModal()">
+          <i class="bi bi-plus-lg me-1"></i>ルートを追加
+        </button>
+      </div>
+      <div id="routes-alert"></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th style="width:60px">色</th>
+              <th>ルート名</th>
+              <th>難易度</th>
+              <th>担当可能人数</th>
+              <th class="text-center" style="width:100px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="routes-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /tab-content -->
+</div><!-- /container -->
+
+
+<!-- ==================== Modal: Staff ==================== -->
+<div class="modal fade" id="staffModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="staff-modal-title">職員を追加</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="staff-id">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">名前 <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="staff-name" placeholder="例: 山田 太郎">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">担当可能なルート</label>
+          <div id="staff-route-checks" class="border rounded p-3 bg-light">
+            <p class="text-muted small mb-0">先にルート管理でルートを追加してください</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button class="btn btn-primary" onclick="StaffUI.save()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Modal: Route ==================== -->
+<div class="modal fade" id="routeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="route-modal-title">ルートを追加</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="route-id">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">ルート名 <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="route-name" placeholder="例: Aルート">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">難易度</label>
+          <select class="form-select" id="route-difficulty">
+            <option value="low">低（誰でも運転可）</option>
+            <option value="medium">中</option>
+            <option value="high">高（熟練者のみ）</option>
+          </select>
+          <div class="form-text">難易度は参考情報です。担当可否は職員ごとに個別設定してください。</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">識別色</label>
+          <div id="route-color-picker" class="d-flex gap-2 flex-wrap"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button class="btn btn-primary" onclick="RouteUI.save()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Modal: Cell Edit ==================== -->
+<div class="modal fade" id="cellModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cell-modal-title">担当者を変更</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cell-date">
+        <input type="hidden" id="cell-route-id">
+        <input type="hidden" id="cell-timeslot">
+        <div class="mb-3">
+          <label class="form-label">担当者を選択</label>
+          <select class="form-select" id="cell-staff-select" onchange="ScheduleUI.onCellSelectChange()"></select>
+        </div>
+        <div id="cell-warning"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button class="btn btn-primary" onclick="ScheduleUI.saveCellEdit()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Modal: Unavailability ==================== -->
+<div class="modal fade" id="unavailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">今週の休み設定</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">休みの職員にチェックを入れてください。自動生成時に対象外になります。</p>
+        <div class="table-responsive">
+          <table class="table table-bordered table-sm" id="unavail-table"></table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+        <button class="btn btn-primary" onclick="ScheduleUI.saveUnavail()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+"use strict";
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const ROUTE_COLORS = [
+  '#2980b9', '#27ae60', '#c0392b', '#e67e22',
+  '#8e44ad', '#16a085', '#d35400', '#2c3e50'
+];
+const DIFF_LABEL = { low: '低', medium: '中', high: '高' };
+const DIFF_CLASS = { low: 'success', medium: 'warning text-dark', high: 'danger' };
+const DAYS_JP   = ['日','月','火','水','木','金','土'];
+
+// ============================================================
+// UTILS
+// ============================================================
+const Utils = {
+  uuid() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  },
+  toISO(d) {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  },
+  getMonday(d) {
+    const dt = new Date(d);
+    const day = dt.getDay();
+    dt.setDate(dt.getDate() - day + (day === 0 ? -6 : 1));
+    return this.toISO(dt);
+  },
+  addDays(dateStr, n) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + n);
+    return this.toISO(d);
+  },
+  fmtJP(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    return `${d.getMonth()+1}/${d.getDate()}(${DAYS_JP[d.getDay()]})`;
+  },
+  dow(dateStr) {
+    return new Date(dateStr + 'T00:00:00').getDay();
+  },
+  weekDates(monday) {
+    return Array.from({length: 6}, (_, i) => this.addDays(monday, i)); // Mon–Sat
+  },
+  esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+};
+
+// ============================================================
+// DATABASE
+// ============================================================
+const DB = {
+  _key: k => 'sshift_' + k,
+  _get(k)    { return JSON.parse(localStorage.getItem(this._key(k)) || 'null'); },
+  _set(k, v) { localStorage.setItem(this._key(k), JSON.stringify(v)); },
+
+  getStaff()   { return this._get('staff')  || []; },
+  getRoutes()  { return this._get('routes') || []; },
+
+  saveStaff(v)  { this._set('staff',  v); },
+  saveRoutes(v) { this._set('routes', v); },
+
+  addStaff(data) {
+    const list = this.getStaff();
+    const item = { id: Utils.uuid(), ...data };
+    list.push(item); this.saveStaff(list); return item;
+  },
+  updateStaff(id, data) {
+    const list = this.getStaff();
+    const i = list.findIndex(x => x.id === id);
+    if (i >= 0) { list[i] = {...list[i], ...data}; this.saveStaff(list); }
+  },
+  deleteStaff(id) {
+    this.saveStaff(this.getStaff().filter(x => x.id !== id));
+  },
+
+  addRoute(data) {
+    const list = this.getRoutes();
+    const item = { id: Utils.uuid(), ...data };
+    list.push(item); this.saveRoutes(list); return item;
+  },
+  updateRoute(id, data) {
+    const list = this.getRoutes();
+    const i = list.findIndex(x => x.id === id);
+    if (i >= 0) { list[i] = {...list[i], ...data}; this.saveRoutes(list); }
+  },
+  deleteRoute(id) {
+    this.saveRoutes(this.getRoutes().filter(x => x.id !== id));
+    // remove from staff qualifications
+    const staff = this.getStaff().map(s => ({
+      ...s, canDriveRoutes: s.canDriveRoutes.filter(r => r !== id)
+    }));
+    this.saveStaff(staff);
+  },
+
+  getSchedule(weekStart) {
+    const all = this._get('schedules') || {};
+    return all[weekStart] || { assignments: {}, unavailability: {} };
+  },
+  saveSchedule(weekStart, data) {
+    const all = this._get('schedules') || {};
+    all[weekStart] = data;
+    this._set('schedules', all);
+  },
+
+  // For rotation: get all past assignments
+  allAssignments() {
+    const all = this._get('schedules') || {};
+    const result = [];
+    Object.entries(all).forEach(([ws, data]) => {
+      if (!data?.assignments) return;
+      Object.entries(data.assignments).forEach(([date, routes]) => {
+        Object.entries(routes).forEach(([routeId, slots]) => {
+          if (slots.morning)   result.push({ date, routeId, staffId: slots.morning,   timeslot: 'morning' });
+          if (slots.afternoon) result.push({ date, routeId, staffId: slots.afternoon, timeslot: 'afternoon' });
+        });
+      });
+    });
+    return result;
+  }
+};
+
+// ============================================================
+// SCHEDULER
+// ============================================================
+const Scheduler = {
+  generate(weekStart, unavailability) {
+    const routes = DB.getRoutes();
+    const staff  = DB.getStaff();
+    const dates  = Utils.weekDates(weekStart);
+
+    if (!routes.length) return { error: 'ルートが登録されていません。「ルート管理」タブでルートを追加してください。' };
+    if (!staff.length)  return { error: '職員が登録されていません。「職員管理」タブで職員を追加してください。' };
+
+    // Historical route frequency (past 8 weeks) for rotation fairness
+    const cutoff = Utils.addDays(weekStart, -56);
+    const histCount = {}; // staffId -> routeId -> count
+    staff.forEach(s => {
+      histCount[s.id] = {};
+      routes.forEach(r => { histCount[s.id][r.id] = 0; });
+    });
+    DB.allAssignments()
+      .filter(a => a.date >= cutoff && a.date < weekStart)
+      .forEach(a => {
+        if (histCount[a.staffId]?.[a.routeId] !== undefined)
+          histCount[a.staffId][a.routeId]++;
+      });
+
+    // Init empty schedule
+    const assignments = {};
+    dates.forEach(d => {
+      assignments[d] = {};
+      routes.forEach(r => { assignments[d][r.id] = { morning: null, afternoon: null }; });
+    });
+
+    // Weekly counters
+    const wkTotal = {};          // staffId -> total shifts this week
+    const wkRoute = {};          // staffId -> routeId -> shifts this week
+    staff.forEach(s => {
+      wkTotal[s.id] = 0;
+      wkRoute[s.id] = {};
+      routes.forEach(r => { wkRoute[s.id][r.id] = 0; });
+    });
+
+    const warnings = [];
+
+    for (const date of dates) {
+      const unavailToday = unavailability?.[date] || [];
+
+      for (const timeslot of ['morning', 'afternoon']) {
+        for (const route of routes) {
+          // Eligible: qualified AND available
+          const eligible = staff.filter(s =>
+            s.canDriveRoutes.includes(route.id) && !unavailToday.includes(s.id)
+          );
+
+          if (!eligible.length) {
+            warnings.push(`${Utils.fmtJP(date)} ${route.name} ${timeslot === 'morning' ? '朝' : '夕'}: 担当可能な職員がいません`);
+            continue;
+          }
+
+          // Who's already assigned today?
+          const todaySet = new Set();
+          Object.values(assignments[date]).forEach(slots => {
+            if (slots.morning)   todaySet.add(slots.morning);
+            if (slots.afternoon) todaySet.add(slots.afternoon);
+          });
+
+          // Scoring: lower = more desirable
+          const scored = eligible.map(s => {
+            const alreadyToday  = todaySet.has(s.id) ? 80 : 0;     // avoid double-booking same day
+            const weekLoad      = wkTotal[s.id] * 10;              // distribute weekly load
+            const histRoute     = (histCount[s.id]?.[route.id] || 0) * 5; // rotate routes over weeks
+            const weekRoute     = (wkRoute[s.id]?.[route.id]  || 0) * 8;  // rotate routes this week
+            const noise         = Math.random() * 0.5;             // break ties randomly
+            return { s, score: weekLoad + histRoute + weekRoute + alreadyToday + noise };
+          });
+          scored.sort((a, b) => a.score - b.score);
+          const best = scored[0].s;
+
+          assignments[date][route.id][timeslot] = best.id;
+          wkTotal[best.id]++;
+          wkRoute[best.id][route.id]++;
+        }
+      }
+    }
+
+    return { assignments, warnings };
+  }
+};
+
+// ============================================================
+// ROUTE UI
+// ============================================================
+const RouteUI = {
+  render() {
+    const routes = DB.getRoutes();
+    const staff  = DB.getStaff();
+    const tbody  = document.getElementById('routes-tbody');
+
+    if (!routes.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">
+        ルートが登録されていません。「ルートを追加」ボタンから追加してください。
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = routes.map(r => {
+      const cnt = staff.filter(s => s.canDriveRoutes.includes(r.id)).length;
+      return `<tr>
+        <td><span class="badge px-3 py-2" style="background:${r.color}">&nbsp;</span></td>
+        <td class="fw-semibold">${Utils.esc(r.name)}</td>
+        <td><span class="badge bg-${DIFF_CLASS[r.difficulty] || 'secondary'}">${DIFF_LABEL[r.difficulty] || '-'}</span></td>
+        <td>
+          <span class="badge bg-secondary me-1">${cnt}名</span>
+          ${cnt === 0 ? '<span class="text-danger small"><i class="bi bi-exclamation-triangle-fill"></i> 担当者なし</span>' : ''}
+        </td>
+        <td class="text-center">
+          <button class="btn btn-outline-primary btn-sm me-1" onclick="RouteUI.openEditModal('${r.id}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-outline-danger btn-sm" onclick="RouteUI.del('${r.id}')"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>`;
+    }).join('');
+  },
+
+  openAddModal() {
+    document.getElementById('route-id').value = '';
+    document.getElementById('route-name').value = '';
+    document.getElementById('route-difficulty').value = 'low';
+    document.getElementById('route-modal-title').textContent = 'ルートを追加';
+    this._renderColorPicker(ROUTE_COLORS[DB.getRoutes().length % ROUTE_COLORS.length]);
+    new bootstrap.Modal(document.getElementById('routeModal')).show();
+  },
+
+  openEditModal(id) {
+    const r = DB.getRoutes().find(x => x.id === id);
+    if (!r) return;
+    document.getElementById('route-id').value = id;
+    document.getElementById('route-name').value = r.name;
+    document.getElementById('route-difficulty').value = r.difficulty;
+    document.getElementById('route-modal-title').textContent = 'ルートを編集';
+    this._renderColorPicker(r.color);
+    new bootstrap.Modal(document.getElementById('routeModal')).show();
+  },
+
+  _renderColorPicker(sel) {
+    document.getElementById('route-color-picker').innerHTML = ROUTE_COLORS.map(c => `
+      <div onclick="RouteUI._pickColor(this,'${c}')" data-color="${c}"
+           style="width:30px;height:30px;border-radius:50%;background:${c};cursor:pointer;
+                  border:3px solid ${c === sel ? '#000' : 'transparent'};
+                  box-shadow:${c === sel ? '0 0 0 2px rgba(0,0,0,0.25)' : 'none'}"></div>
+    `).join('');
+  },
+
+  _pickColor(el, color) {
+    document.querySelectorAll('#route-color-picker div').forEach(d => {
+      d.style.border = '3px solid transparent';
+      d.style.boxShadow = 'none';
+    });
+    el.style.border = '3px solid #000';
+    el.style.boxShadow = '0 0 0 2px rgba(0,0,0,0.25)';
+  },
+
+  _selectedColor() {
+    const el = document.querySelector('#route-color-picker div[style*="rgb(0, 0, 0)"]')
+            || document.querySelector('#route-color-picker div');
+    return el ? el.dataset.color : ROUTE_COLORS[0];
+  },
+
+  save() {
+    const id   = document.getElementById('route-id').value;
+    const name = document.getElementById('route-name').value.trim();
+    const diff = document.getElementById('route-difficulty').value;
+    const color = this._selectedColor();
+    if (!name) { alert('ルート名を入力してください。'); return; }
+    if (id) DB.updateRoute(id, { name, difficulty: diff, color });
+    else    DB.addRoute({ name, difficulty: diff, color });
+    bootstrap.Modal.getInstance(document.getElementById('routeModal')).hide();
+    this.render(); StaffUI.render(); ScheduleUI.render();
+  },
+
+  del(id) {
+    const r = DB.getRoutes().find(x => x.id === id);
+    if (!r) return;
+    if (!confirm(`「${r.name}」を削除しますか？\n職員の担当設定からも削除されます。`)) return;
+    DB.deleteRoute(id);
+    this.render(); StaffUI.render(); ScheduleUI.render();
+  }
+};
+
+// ============================================================
+// STAFF UI
+// ============================================================
+const StaffUI = {
+  render() {
+    const staff  = DB.getStaff();
+    const routes = DB.getRoutes();
+    const tbody  = document.getElementById('staff-tbody');
+
+    if (!staff.length) {
+      tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-4">
+        職員が登録されていません。「職員を追加」ボタンから追加してください。
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = staff.map(s => {
+      const pills = s.canDriveRoutes.map(rid => {
+        const r = routes.find(x => x.id === rid);
+        return r ? `<span class="badge me-1" style="background:${r.color}">${Utils.esc(r.name)}</span>` : '';
+      }).join('');
+      return `<tr>
+        <td class="fw-semibold">${Utils.esc(s.name)}</td>
+        <td>${pills || '<span class="text-muted small">担当ルートなし</span>'}</td>
+        <td class="text-center">
+          <button class="btn btn-outline-primary btn-sm me-1" onclick="StaffUI.openEditModal('${s.id}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-outline-danger btn-sm" onclick="StaffUI.del('${s.id}')"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>`;
+    }).join('');
+  },
+
+  openAddModal() {
+    document.getElementById('staff-id').value = '';
+    document.getElementById('staff-name').value = '';
+    document.getElementById('staff-modal-title').textContent = '職員を追加';
+    this._renderChecks([]);
+    new bootstrap.Modal(document.getElementById('staffModal')).show();
+  },
+
+  openEditModal(id) {
+    const s = DB.getStaff().find(x => x.id === id);
+    if (!s) return;
+    document.getElementById('staff-id').value = id;
+    document.getElementById('staff-name').value = s.name;
+    document.getElementById('staff-modal-title').textContent = '職員を編集';
+    this._renderChecks(s.canDriveRoutes);
+    new bootstrap.Modal(document.getElementById('staffModal')).show();
+  },
+
+  _renderChecks(selected) {
+    const routes = DB.getRoutes();
+    const el = document.getElementById('staff-route-checks');
+    if (!routes.length) {
+      el.innerHTML = '<p class="text-muted small mb-0">先にルート管理でルートを追加してください</p>';
+      return;
+    }
+    el.innerHTML = routes.map(r => `
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" value="${r.id}" id="rc_${r.id}"
+               ${selected.includes(r.id) ? 'checked' : ''}>
+        <label class="form-check-label" for="rc_${r.id}">
+          <span class="route-dot me-1" style="background:${r.color}"></span>
+          ${Utils.esc(r.name)}
+          <span class="text-muted small ms-1">（難易度: ${DIFF_LABEL[r.difficulty] || '-'}）</span>
+        </label>
+      </div>
+    `).join('');
+  },
+
+  save() {
+    const id   = document.getElementById('staff-id').value;
+    const name = document.getElementById('staff-name').value.trim();
+    const canDriveRoutes = [...document.querySelectorAll('#staff-route-checks input:checked')].map(e => e.value);
+    if (!name) { alert('名前を入力してください。'); return; }
+    if (id) DB.updateStaff(id, { name, canDriveRoutes });
+    else    DB.addStaff({ name, canDriveRoutes });
+    bootstrap.Modal.getInstance(document.getElementById('staffModal')).hide();
+    this.render(); RouteUI.render(); ScheduleUI.render();
+  },
+
+  del(id) {
+    const s = DB.getStaff().find(x => x.id === id);
+    if (!s) return;
+    if (!confirm(`「${s.name}」を削除しますか？`)) return;
+    DB.deleteStaff(id);
+    this.render(); RouteUI.render(); ScheduleUI.render();
+  }
+};
+
+// ============================================================
+// SCHEDULE UI
+// ============================================================
+const ScheduleUI = {
+  weekStart: Utils.getMonday(new Date()),
+
+  prevWeek()      { this.weekStart = Utils.addDays(this.weekStart, -7); this.render(); },
+  nextWeek()      { this.weekStart = Utils.addDays(this.weekStart,  7); this.render(); },
+  goToThisWeek()  { this.weekStart = Utils.getMonday(new Date()); this.render(); },
+
+  render() {
+    const ws     = this.weekStart;
+    const dates  = Utils.weekDates(ws);
+    const routes = DB.getRoutes();
+    const staff  = DB.getStaff();
+    const sched  = DB.getSchedule(ws);
+    const { assignments, unavailability } = sched;
+
+    // Week label
+    const label = `${Utils.fmtJP(dates[0])} 〜 ${Utils.fmtJP(dates[5])}`;
+    document.getElementById('week-label').textContent = label;
+    document.getElementById('print-week-label').textContent = label;
+
+    if (!routes.length || !staff.length) {
+      document.getElementById('schedule-thead').innerHTML = '';
+      document.getElementById('schedule-tbody').innerHTML = `
+        <tr><td colspan="10" class="text-center text-muted py-5">
+          <i class="bi bi-info-circle me-2"></i>
+          「ルート管理」と「職員管理」でデータを登録してから自動生成してください。
+        </td></tr>`;
+      document.getElementById('assignment-summary').innerHTML = '';
+      return;
+    }
+
+    // --- THEAD ---
+    const dayThs = dates.map(d => {
+      const dow = Utils.dow(d);
+      const isSat = dow === 6;
+      const cls = isSat ? 'col-sat' : '';
+      return `<th class="${cls}" colspan="1">${Utils.fmtJP(d)}</th>`;
+    }).join('');
+
+    document.getElementById('schedule-thead').innerHTML = `
+      <tr>
+        <th style="min-width:90px">ルート</th>
+        <th style="min-width:40px">時間</th>
+        ${dayThs}
+      </tr>`;
+
+    // --- TBODY ---
+    let html = '';
+    for (const route of routes) {
+      for (const [ts, tsLabel] of [['morning','朝'], ['afternoon','夕']]) {
+        html += `<tr>`;
+
+        // Route label (rowspan=2 on first row only)
+        if (ts === 'morning') {
+          html += `<td class="row-label" rowspan="2">
+            <span class="route-dot me-1" style="background:${route.color}"></span>${Utils.esc(route.name)}
+          </td>`;
+        }
+
+        // Timeslot label
+        html += `<td class="ts-label">${tsLabel}</td>`;
+
+        // Day cells
+        for (const date of dates) {
+          const dow    = Utils.dow(date);
+          const isSat  = dow === 6;
+          const bgCls  = isSat ? 'cell-bg-sat' : '';
+          const slots  = assignments?.[date]?.[route.id] || {};
+          const sid    = slots[ts] || null;
+          const person = sid ? staff.find(s => s.id === sid) : null;
+
+          const unavailToday = unavailability?.[date] || [];
+          const warnUnavail  = sid && unavailToday.includes(sid);
+          const warnIneligible = sid && !DB.getRoutes().find(r => r.id === route.id)?.id; // always false placeholder
+          const isIneligible = sid && !(person?.canDriveRoutes || []).includes(route.id);
+
+          let btnCls = 'cell-btn';
+          let inner  = '';
+          if (person) {
+            btnCls += ' assigned';
+            if (warnUnavail)    btnCls += ' warn-unavail';
+            else if (isIneligible) btnCls += ' warn-ineligible';
+            inner = `${warnUnavail ? '<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>' : ''}${isIneligible ? '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>' : ''}${Utils.esc(person.name)}`;
+          } else {
+            btnCls += ' empty';
+            inner = `<i class="bi bi-plus"></i>`;
+          }
+
+          html += `<td style="padding:3px" class="${bgCls}">
+            <button class="${btnCls}" onclick="ScheduleUI.openCellEdit('${date}','${route.id}','${ts}')">
+              ${inner}
+            </button>
+          </td>`;
+        }
+        html += `</tr>`;
+      }
+      // Row separator between routes
+      html += `<tr class="separator"><td colspan="${dates.length + 2}"></td></tr>`;
+    }
+
+    document.getElementById('schedule-tbody').innerHTML = html;
+    this._renderSummary(dates, routes, staff, assignments);
+  },
+
+  _renderSummary(dates, routes, staff, assignments) {
+    const total = {}, routeCount = {};
+    staff.forEach(s => { total[s.id] = 0; routeCount[s.id] = {}; });
+
+    dates.forEach(d => {
+      routes.forEach(r => {
+        const slots = assignments?.[d]?.[r.id] || {};
+        ['morning','afternoon'].forEach(ts => {
+          const sid = slots[ts];
+          if (sid && total[sid] !== undefined) {
+            total[sid]++;
+            routeCount[sid][r.id] = (routeCount[sid][r.id] || 0) + 1;
+          }
+        });
+      });
+    });
+
+    const maxTotal = Math.max(...Object.values(total), 1);
+    const el = document.getElementById('assignment-summary');
+
+    const allZero = Object.values(total).every(v => v === 0);
+    if (allZero) {
+      el.innerHTML = '<div class="col-12 text-muted small">シフトがまだ生成されていません。「自動生成」ボタンを押してください。</div>';
+      return;
+    }
+
+    el.innerHTML = staff.map(s => {
+      const cnt = total[s.id] || 0;
+      const pct = Math.round(cnt / maxTotal * 100);
+      const pills = routes.map(r => {
+        const rc = routeCount[s.id]?.[r.id] || 0;
+        return rc ? `<span class="badge me-1" style="background:${r.color};font-size:0.7rem">${r.name}:${rc}</span>` : '';
+      }).join('');
+      return `
+        <div class="col-6 col-md-4 col-lg-3 col-xl-2">
+          <div class="border rounded p-2 bg-white">
+            <div class="d-flex justify-content-between">
+              <span class="fw-semibold small">${Utils.esc(s.name)}</span>
+              <span class="badge bg-secondary">${cnt}回</span>
+            </div>
+            <div class="cap-bar"><div class="cap-fill" style="width:${pct}%"></div></div>
+            <div class="mt-1">${pills}</div>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  autoGenerate() {
+    const ws    = this.weekStart;
+    const sched = DB.getSchedule(ws);
+    const hasData = Object.keys(sched.assignments || {}).length > 0;
+
+    if (hasData && !confirm('現在のシフトを上書きして自動生成しますか？')) return;
+
+    const result = Scheduler.generate(ws, sched.unavailability || {});
+    if (result.error) {
+      this._alert('danger', result.error);
+      return;
+    }
+
+    DB.saveSchedule(ws, { assignments: result.assignments, unavailability: sched.unavailability || {} });
+
+    let msg = 'シフトを自動生成しました。';
+    if (result.warnings.length) {
+      msg += `<hr><strong>注意:</strong><ul class="mb-0 mt-1">${result.warnings.map(w => `<li>${Utils.esc(w)}</li>`).join('')}</ul>`;
+    }
+    this._alert('success', msg);
+    this.render();
+  },
+
+  openCellEdit(date, routeId, timeslot) {
+    const routes = DB.getRoutes();
+    const staff  = DB.getStaff();
+    const route  = routes.find(r => r.id === routeId);
+    const sched  = DB.getSchedule(this.weekStart);
+    const currentSid = sched.assignments?.[date]?.[routeId]?.[timeslot] || '';
+    const unavailToday = sched.unavailability?.[date] || [];
+
+    document.getElementById('cell-date').value     = date;
+    document.getElementById('cell-route-id').value  = routeId;
+    document.getElementById('cell-timeslot').value  = timeslot;
+    document.getElementById('cell-modal-title').textContent =
+      `${Utils.fmtJP(date)} / ${route?.name} / ${timeslot === 'morning' ? '朝' : '夕'}`;
+
+    const eligible   = staff.filter(s =>  s.canDriveRoutes.includes(routeId));
+    const ineligible = staff.filter(s => !s.canDriveRoutes.includes(routeId));
+
+    let opts = `<option value="">（未割り当て）</option>`;
+    if (eligible.length) {
+      opts += `<optgroup label="担当可能">`;
+      eligible.forEach(s => {
+        const u = unavailToday.includes(s.id) ? ' ⚠️休み' : '';
+        opts += `<option value="${s.id}" ${s.id === currentSid ? 'selected' : ''}>${Utils.esc(s.name)}${u}</option>`;
+      });
+      opts += `</optgroup>`;
+    }
+    if (ineligible.length) {
+      opts += `<optgroup label="担当不可（緊急時のみ）">`;
+      ineligible.forEach(s => {
+        opts += `<option value="${s.id}" ${s.id === currentSid ? 'selected' : ''}>${Utils.esc(s.name)} ⚠️担当不可</option>`;
+      });
+      opts += `</optgroup>`;
+    }
+
+    document.getElementById('cell-staff-select').innerHTML = opts;
+    document.getElementById('cell-warning').innerHTML = '';
+
+    new bootstrap.Modal(document.getElementById('cellModal')).show();
+    this.onCellSelectChange(); // initial warning check
+  },
+
+  onCellSelectChange() {
+    const sid = document.getElementById('cell-staff-select').value;
+    const routeId = document.getElementById('cell-route-id').value;
+    const date    = document.getElementById('cell-date').value;
+    const sched   = DB.getSchedule(this.weekStart);
+    const unavailToday = sched.unavailability?.[date] || [];
+    const staff   = DB.getStaff();
+    const person  = sid ? staff.find(s => s.id === sid) : null;
+    const el      = document.getElementById('cell-warning');
+
+    if (!sid || !person) { el.innerHTML = ''; return; }
+
+    const isIneligible = !person.canDriveRoutes.includes(routeId);
+    const isUnavail    = unavailToday.includes(sid);
+
+    if (isIneligible) {
+      el.innerHTML = `<div class="alert alert-danger py-1 small mt-1 mb-0"><i class="bi bi-exclamation-triangle-fill me-1"></i>この職員はこのルートの担当不可に設定されています。</div>`;
+    } else if (isUnavail) {
+      el.innerHTML = `<div class="alert alert-warning py-1 small mt-1 mb-0"><i class="bi bi-exclamation-triangle-fill me-1"></i>この職員は本日休みに設定されています。</div>`;
+    } else {
+      el.innerHTML = '';
+    }
+  },
+
+  saveCellEdit() {
+    const date    = document.getElementById('cell-date').value;
+    const routeId = document.getElementById('cell-route-id').value;
+    const ts      = document.getElementById('cell-timeslot').value;
+    const sid     = document.getElementById('cell-staff-select').value || null;
+
+    const sched = DB.getSchedule(this.weekStart);
+    if (!sched.assignments[date])          sched.assignments[date] = {};
+    if (!sched.assignments[date][routeId]) sched.assignments[date][routeId] = {};
+    sched.assignments[date][routeId][ts] = sid;
+
+    DB.saveSchedule(this.weekStart, sched);
+    bootstrap.Modal.getInstance(document.getElementById('cellModal')).hide();
+    this.render();
+  },
+
+  openUnavailModal() {
+    const ws    = this.weekStart;
+    const dates = Utils.weekDates(ws);
+    const staff = DB.getStaff();
+    const sched = DB.getSchedule(ws);
+    const unavail = sched.unavailability || {};
+
+    const ths = dates.map(d => `<th class="text-center" style="font-size:0.78rem;min-width:80px">${Utils.fmtJP(d)}</th>`).join('');
+    const rows = staff.map(s => {
+      const cells = dates.map(d => {
+        const checked = (unavail[d] || []).includes(s.id) ? 'checked' : '';
+        return `<td class="text-center"><input type="checkbox" class="form-check-input" data-sid="${s.id}" data-date="${d}" ${checked}></td>`;
+      }).join('');
+      return `<tr><td class="fw-semibold" style="white-space:nowrap">${Utils.esc(s.name)}</td>${cells}</tr>`;
+    }).join('');
+
+    document.getElementById('unavail-table').innerHTML = `
+      <thead class="table-dark"><tr><th>職員名</th>${ths}</tr></thead>
+      <tbody>${rows}</tbody>`;
+
+    new bootstrap.Modal(document.getElementById('unavailModal')).show();
+  },
+
+  saveUnavail() {
+    const sched  = DB.getSchedule(this.weekStart);
+    const unavail = {};
+    document.querySelectorAll('#unavail-table input[type=checkbox]:checked').forEach(cb => {
+      const d = cb.dataset.date;
+      if (!unavail[d]) unavail[d] = [];
+      unavail[d].push(cb.dataset.sid);
+    });
+    sched.unavailability = unavail;
+    DB.saveSchedule(this.weekStart, sched);
+    bootstrap.Modal.getInstance(document.getElementById('unavailModal')).hide();
+    this.render();
+  },
+
+  _alert(type, msg) {
+    document.getElementById('schedule-alert').innerHTML = `
+      <div class="alert alert-${type} alert-dismissible fade show">
+        <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}-fill me-2"></i>${msg}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>`;
+  }
+};
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  RouteUI.render();
+  StaffUI.render();
+  ScheduleUI.render();
+});
+</script>
+</body>
+</html>
